@@ -1,6 +1,6 @@
 # jira-cli
 
-Jira Cloud from the shell, built for AI agent harnesses that cannot load MCP servers (and for scripts). One command, 47 tools covering issues, search, projects, users, boards, sprints, filters, dashboards and fix versions, one JSON envelope, authenticated with a personal Atlassian API token. Ships with an agent skill so Claude Code, Kiro and similar tools know when and how to use it.
+Jira Cloud from the shell, built for AI agent harnesses that cannot load MCP servers (and for scripts). One command, 49 tools covering issues, search, projects, users, boards, sprints, filters, dashboards and fix versions, one JSON envelope, authenticated with a personal Atlassian API token. Ships with an agent skill so Claude Code, Kiro and similar tools know when and how to use it.
 
 The tool names, parameters and response envelope are the same as the [Jira Cloud MCP server](https://github.com/phuc-nt/jira-cloud-mcp-server), so a workflow written against the CLI moves to MCP without changes.
 
@@ -63,12 +63,12 @@ Error codes: `AUTH_FAILED`, `PERMISSION_DENIED`, `INVALID_INPUT`, `NOT_FOUND`, `
 
 | Area | Tools |
 |---|---|
-| Issues | `getIssue`, `createIssue`, `updateIssue`, `deleteIssue`, `assignIssue`, `getIssueTransitions`, `transitionIssue`, `getIssueComments`, `addIssueComment`, `updateIssueComment`, `listIssues` |
+| Issues | `getIssue`, `createIssue`, `updateIssue`, `deleteIssue`, `assignIssue`, `getIssueTransitions`, `transitionIssue`, `getIssueComments`, `addIssueComment`, `updateIssueComment` |
 | Search | `enhancedSearchIssues`, `universalSearchUsers`, `getUser` |
-| Projects and versions | `listProjects`, `getProject`, `listProjectVersions`, `getProjectVersion`, `createFixVersion`, `updateFixVersion` |
-| Boards and sprints | `listBoards`, `getBoard`, `getBoardConfiguration`, `getBoardIssues`, `listSprints`, `getSprint`, `getSprintIssues`, `createSprint`, `startSprint`, `closeSprint`, `addIssueToSprint`, `addIssuesToBacklog`, `rankBacklogIssues` |
+| Projects and versions | `listProjects`, `getProject`, `listProjectVersions`, `getProjectVersion`, `createFixVersion`, `updateFixVersion`, `deleteFixVersion` |
+| Boards and sprints | `listBoards`, `getBoard`, `getBoardConfiguration`, `getBoardIssues`, `listSprints`, `getSprint`, `getSprintIssues`, `createSprint`, `startSprint`, `closeSprint`, `addIssueToSprint`, `deleteSprint`, `addIssuesToBacklog`, `rankBacklogIssues` |
 | Filters | `listFilters`, `getFilter`, `getMyFilters`, `createFilter`, `updateFilter`, `deleteFilter` |
-| Dashboards | `listDashboards`, `getDashboard`, `createDashboard`, `updateDashboard`, `getDashboardGadgets`, `getJiraGadgets`, `addGadgetToDashboard`, `removeGadgetFromDashboard` |
+| Dashboards | `listDashboards`, `getDashboard`, `createDashboard`, `updateDashboard`, `getDashboardGadgets`, `getJiraGadgets`, `addGadgetToDashboard`, `removeGadgetFromDashboard`, `deleteDashboard` |
 
 Exact names and parameter tables: [skills/jira-cli/reference/tools.md](skills/jira-cli/reference/tools.md). `jira-cli describe <tool>` is the authority.
 
