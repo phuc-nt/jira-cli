@@ -338,7 +338,10 @@ export async function createSprint(
 /**
  * Delete a sprint.
  *
- * Jira refuses to delete an active sprint; it must be closed or still future.
+ * Verified against Jira Cloud: an ACTIVE sprint is deleted without objection.
+ * There is no API-side guardrail and no undo, so callers must check the sprint's
+ * state themselves before calling.
+ *
  * Issues in the sprint are not deleted — they return to the backlog.
  */
 export async function deleteSprint(config: AtlassianConfig, sprintId: string): Promise<void> {

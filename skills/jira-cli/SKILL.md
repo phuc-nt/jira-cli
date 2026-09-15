@@ -163,15 +163,20 @@ Start from the task, not from the tool name:
 | What is on a board / in the backlog | `getBoardIssues` |
 | What is in a sprint | `getSprintIssues` |
 | Finish a sprint normally | `closeSprint` — NOT `deleteSprint` |
-| Undo a sprint created by mistake | `deleteSprint` (future or closed only; active is refused) |
+| Undo a sprint created by mistake | `deleteSprint` — check the state first: Jira deletes an ACTIVE sprint without objection |
 | Retire a release | `updateFixVersion --released true` — NOT `deleteFixVersion` |
 
 Pairs that are easy to confuse:
 
-- `getSprintIssues` reports **0 issues on team-managed (next-gen) boards** even
-  when the sprint has issues — Jira's own agile endpoint behaves that way. To
-  see a next-gen sprint's contents, use
-  `enhancedSearchIssues --jql 'sprint = <id>'`.
+- After `addIssueToSprint`, a sprint read back **immediately** can report 0
+  issues: Jira's search index lags the write by a second or two. Verified by
+  probe — 0 immediately, correct count ~3s later. `enhancedSearchIssues --jql
+  'sprint = <id>'` reads the same lagging index, so it is not a workaround.
+  Wait a moment and read again; do not conclude the write failed, and do not
+  re-add the issues.
+- `getSprintIssues` **omits sub-tasks**. A sprint holding 25 issues where one is
+  a sub-task lists 24. The sub-task is still in the sprint — its own `sprint`
+  field carries the id. Read the issue directly when the count must be exact.
 - `closeSprint` ends a sprint and keeps its history; `deleteSprint` erases it
   from burndown and velocity. Default to `closeSprint`.
 - `removeGadgetFromDashboard` removes one gadget; `deleteDashboard` removes the
