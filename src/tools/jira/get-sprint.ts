@@ -108,7 +108,11 @@ async function getSprintImpl(params: GetSprintParams, context: any) {
 export const registerGetSprintTool = (server: ToolRegistrar) => {
   server.tool(
     'getSprint',
-    'Get detailed information about a specific Jira sprint including metrics and board details',
+    `Get detailed information about a specific Jira sprint including metrics and board details.
+
+The payload is nested under "sprint": read the state as data.sprint.state, not
+data.state. The flat path returns undefined, which is easy to mistake for "the
+sprint has no state" — check this before acting on a sprint's state.`,
     getSprintSchema.shape,
     async (params: GetSprintParams, context: Record<string, any>) => {
       try {

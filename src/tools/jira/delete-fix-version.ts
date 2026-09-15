@@ -38,8 +38,11 @@ IRREVERSIBLE. Confirm with the user before calling.
 
 Issues are NOT deleted, but every issue carrying this version loses it unless a
 replacement is named: moveFixIssuesTo takes over the fixVersions field,
-moveAffectedIssuesTo the affectedVersion field. Check getProjectVersion first —
-its issue counts tell you whether any issue is about to lose the link.
+moveAffectedIssuesTo the affectedVersion field. Jira applies these server-side;
+the move path has not been exercised against an issue that actually carried a
+version, so verify the result with getProjectVersion rather than assuming the
+link moved. Check getProjectVersion first too — its issue counts tell you
+whether any issue is about to lose the link.
 
 To retire a version without deleting it, prefer updateFixVersion with
 released: true or archived: true; the history stays intact that way.

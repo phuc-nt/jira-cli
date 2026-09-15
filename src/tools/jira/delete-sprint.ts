@@ -7,18 +7,25 @@ import { Config } from '../../utils/mcp-helpers.js';
 const logger = Logger.getLogger('JiraTools:deleteSprint');
 
 export const deleteSprintSchema = z.object({
-  sprintId: z.string().describe('Sprint ID to delete (e.g., 34). Get it from listSprints.')
+  sprintId: z.string().describe('Sprint ID to delete (e.g., 34). Get it from listSprints.'),
+  force: z
+    .boolean()
+    .optional()
+    .describe(
+      'Allow deleting an ACTIVE sprint. Without it an active sprint is refused with CONFLICT. Only pass it after the user has confirmed that specific active sprint.'
+    )
 });
 
 type DeleteSprintParams = z.infer<typeof deleteSprintSchema>;
 
 async function deleteSprintToolImpl(params: DeleteSprintParams, context: any) {
   const config = Config.getConfigFromContextOrEnv(context);
-  logger.info(`Deleting sprint with ID: ${params.sprintId}`);
-  await deleteSprint(config, params.sprintId);
+  logger.info(`Deleting sprint with ID: ${params.sprintId}${params.force ? ' (forced)' : ''}`);
+  await deleteSprint(config, params.sprintId, { force: params.force });
   return {
     success: true,
-    sprintId: params.sprintId
+    sprintId: params.sprintId,
+    forced: params.force === true
   };
 }
 
@@ -32,10 +39,11 @@ that data point. Confirm with the user before calling.
 
 Issues are NOT deleted — they go back to the backlog.
 
-WARNING, verified against Jira Cloud: an ACTIVE sprint is deleted without any
-objection. Jira does not protect the sprint the team is currently working in,
-and there is no undo. Always read the sprint's state with getSprint before
-calling, and say the state out loud to the user when asking for confirmation.
+ACTIVE sprints are refused with CONFLICT. Jira itself does not object — verified
+against Jira Cloud, it deletes the sprint the team is working in without any
+warning — so this tool reads the state first and blocks it. Passing force: true
+deletes it anyway; only do that after telling the user the sprint is active and
+getting their confirmation for that specific sprint.
 
 Closing a sprint is the normal end of a sprint; deleting one is only for a
 sprint created by mistake. If the user wants a sprint finished, use

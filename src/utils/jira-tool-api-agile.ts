@@ -336,19 +336,59 @@ export async function createSprint(
 // ... existing code ...
 // (To be filled with the full code of the above functions, keeping their implementation unchanged) 
 /**
- * Delete a sprint.
+ * Read a sprint's state ('future' | 'active' | 'closed').
  *
- * Verified against Jira Cloud: an ACTIVE sprint is deleted without objection.
- * There is no API-side guardrail and no undo, so callers must check the sprint's
- * state themselves before calling.
- *
- * Issues in the sprint are not deleted — they return to the backlog.
+ * Returns null when the state cannot be read, so a caller guarding a
+ * destructive action can tell "not active" apart from "could not check".
  */
-export async function deleteSprint(config: AtlassianConfig, sprintId: string): Promise<void> {
+export async function getSprintState(
+  config: AtlassianConfig,
+  sprintId: string
+): Promise<string | null> {
   const headers = createBasicHeaders(config.email, config.apiToken);
   const baseUrl = normalizeAtlassianBaseUrl(config.baseUrl);
   const url = `${baseUrl}/rest/agile/1.0/sprint/${encodeURIComponent(sprintId)}`;
-  logger.debug(`Deleting Jira sprint ${sprintId}`);
+  const response = await fetch(url, { method: 'GET', headers, credentials: 'omit' });
+  if (!response.ok) {
+    const responseText = await response.text();
+    logger.error(`Jira API error (read sprint state, ${response.status}):`, responseText);
+    throw new Error(`Jira API error: ${response.status} ${responseText}`);
+  }
+  const sprint = await response.json();
+  return typeof sprint?.state === 'string' ? sprint.state : null;
+}
+
+/**
+ * Delete a sprint.
+ *
+ * Verified against Jira Cloud: an ACTIVE sprint is deleted without objection —
+ * there is no API-side guardrail and no undo. This function supplies the
+ * guardrail Jira lacks: it reads the state first and refuses an active sprint
+ * unless the caller passes `force`. The refusal carries HTTP 409 in its message
+ * so the envelope classifies it as CONFLICT.
+ *
+ * Issues in the sprint are not deleted — they return to the backlog.
+ */
+export async function deleteSprint(
+  config: AtlassianConfig,
+  sprintId: string,
+  options: { force?: boolean } = {}
+): Promise<void> {
+  if (!options.force) {
+    const state = await getSprintState(config, sprintId);
+    if (state === 'active') {
+      throw new Error(
+        `Jira API error: 409 Sprint ${sprintId} is ACTIVE. Deleting it erases the ` +
+          `sprint the team is working in, along with its burndown and velocity ` +
+          `history, and Jira offers no undo. Close it with closeSprint instead, ` +
+          `or pass force: true if the user has confirmed deleting an active sprint.`
+      );
+    }
+  }
+  const headers = createBasicHeaders(config.email, config.apiToken);
+  const baseUrl = normalizeAtlassianBaseUrl(config.baseUrl);
+  const url = `${baseUrl}/rest/agile/1.0/sprint/${encodeURIComponent(sprintId)}`;
+  logger.debug(`Deleting Jira sprint ${sprintId}${options.force ? ' (forced)' : ''}`);
   const response = await fetch(url, { method: 'DELETE', headers, credentials: 'omit' });
   if (!response.ok) {
     const responseText = await response.text();

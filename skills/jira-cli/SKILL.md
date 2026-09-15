@@ -163,7 +163,7 @@ Start from the task, not from the tool name:
 | What is on a board / in the backlog | `getBoardIssues` |
 | What is in a sprint | `getSprintIssues` |
 | Finish a sprint normally | `closeSprint` — NOT `deleteSprint` |
-| Undo a sprint created by mistake | `deleteSprint` — check the state first: Jira deletes an ACTIVE sprint without objection |
+| Undo a sprint created by mistake | `deleteSprint` — an ACTIVE sprint is refused with `CONFLICT`; `--force` overrides, only with the user's confirmation |
 | Retire a release | `updateFixVersion --released true` — NOT `deleteFixVersion` |
 
 Pairs that are easy to confuse:
@@ -174,11 +174,22 @@ Pairs that are easy to confuse:
   'sprint = <id>'` reads the same lagging index, so it is not a workaround.
   Wait a moment and read again; do not conclude the write failed, and do not
   re-add the issues.
+- **Single-object read tools nest their payload under their own key.**
+  `getSprint` → `data.sprint.state`, and likewise `getBoard` → `data.board`,
+  `getProject` → `data.project`, `getFilter` → `data.filter`, `getDashboard` →
+  `data.dashboard`. The flat path (`data.state`) returns `undefined`, which
+  looks exactly like "the field is empty" rather than "you read the wrong path".
+  `getIssue` nests differently again: `data.issue` plus its expansions as
+  **siblings** — `data.hierarchy`, `data.subtaskData`, not `data.issue.*`.
+  When a field comes back `undefined`, check the nesting before concluding
+  anything — especially before a destructive call.
 - `getSprintIssues` **omits sub-tasks**. A sprint holding 25 issues where one is
   a sub-task lists 24. The sub-task is still in the sprint — its own `sprint`
   field carries the id. Read the issue directly when the count must be exact.
 - `closeSprint` ends a sprint and keeps its history; `deleteSprint` erases it
-  from burndown and velocity. Default to `closeSprint`.
+  from burndown and velocity. Default to `closeSprint`. `deleteSprint` refuses
+  an active sprint with `CONFLICT` — that refusal is the CLI's own guard, not
+  Jira's, and it means what it says: do not reach for `--force` to get past it.
 - `removeGadgetFromDashboard` removes one gadget; `deleteDashboard` removes the
   whole dashboard for everyone it was shared with.
 - `updateFixVersion` (released/archived) keeps release history;
