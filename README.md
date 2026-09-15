@@ -42,6 +42,8 @@ echo '{"quickFilter":"my-issues","maxResults":10}' | jira-cli enhancedSearchIssu
 
 Parameters can be given as flags (`--key value`, `--key=value`, `--flag`, `--labels a,b`), as one JSON object (`--json '{...}'`, `--file params.json`, `--stdin`), or mixed. Flags are coerced to the type the tool's schema declares. JQL must be bounded (project, assignee, key or date); Jira Cloud rejects unbounded queries.
 
+Responses are written for an agent to read: API self-links, icon and avatar URLs are stripped at every level, issue descriptions are rendered from Jira's ADF to Markdown, and email addresses are returned only by `getUser` and `universalSearchUsers`, the two tools whose job is to look people up. Elsewhere a person is `accountId` plus `displayName`.
+
 Every call prints exactly one envelope on stdout. Logs go to stderr only (`LOG_LEVEL=debug|info|warn|error`, default `warn`).
 
 ```jsonc

@@ -406,6 +406,11 @@ export async function enhancedSearchIssuesImpl(params: EnhancedSearchIssuesParam
       formatEnhancedIssue(issue, params.includeHierarchy, params.includeProgress)
     ) || [];
 
+    // Only what the caller cannot derive itself: the issues, how to ask for
+    // the next page, and the JQL that was actually run (which differs from the
+    // input when smart filters built it). Echoing the input parameters back,
+    // or repeating the paging fields under a second key, costs tokens and
+    // tells the caller nothing new.
     return {
       issues: formattedIssues,
       total: result.issues?.length || 0, // New API doesn't provide total count
@@ -413,17 +418,6 @@ export async function enhancedSearchIssuesImpl(params: EnhancedSearchIssuesParam
       nextPageToken: result.nextPageToken,
       isLast: result.isLast,
       jql: jqlQuery,
-      detectedIssueType: detectedType,
-      searchCriteria: {
-        smartFilters: params,
-        generatedJQL: jqlQuery
-      },
-      pagination: {
-        hasNext: !result.isLast,
-        nextPageToken: result.nextPageToken,
-        isLast: result.isLast
-      },
-      fetchMethod: 'enhanced JQL API with fields',
       success: true
     };
 

@@ -54,6 +54,11 @@ Rules:
 { "ok": false, "error": { "code": "NOT_FOUND", "message": "...", "hint": "..." }, "meta": { "tool": "..." } }
 ```
 
+Responses carry only what you can act on: self-links, icon and avatar URLs are
+removed, and descriptions arrive as Markdown. A person is `accountId` plus
+`displayName`; email addresses appear only in `getUser` and
+`universalSearchUsers`, so use those when you need to match a person by email.
+
 Codes: `AUTH_FAILED`, `PERMISSION_DENIED`, `INVALID_INPUT`, `NOT_FOUND`,
 `CONFLICT`, `RATE_LIMITED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `UNKNOWN_ERROR`.
 On `INVALID_INPUT` from Jira itself (bad JQL, unknown field, missing screen

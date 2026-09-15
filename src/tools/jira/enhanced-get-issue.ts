@@ -380,7 +380,6 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
     const baseIssue = {
       key: issue.key,
       id: issue.id,
-      self: issue.self,
       summary: issue.fields.summary,
       // ADF -> Markdown so clients get readable text instead of a document tree.
       description: renderDescription(issue.fields.description),
@@ -388,28 +387,20 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
         name: issue.fields.status?.name,
         category: issue.fields.status?.statusCategory?.name
       },
-      issueType: {
-        name: issueType,
-        iconUrl: issue.fields.issuetype?.iconUrl
-      },
+      issueType: issueType,
       project: {
         key: issue.fields.project?.key,
         name: issue.fields.project?.name
       },
       assignee: issue.fields.assignee ? {
         accountId: issue.fields.assignee.accountId,
-        displayName: issue.fields.assignee.displayName,
-        emailAddress: issue.fields.assignee.emailAddress
+        displayName: issue.fields.assignee.displayName
       } : null,
       reporter: issue.fields.reporter ? {
         accountId: issue.fields.reporter.accountId,
-        displayName: issue.fields.reporter.displayName,
-        emailAddress: issue.fields.reporter.emailAddress
+        displayName: issue.fields.reporter.displayName
       } : null,
-      priority: {
-        name: issue.fields.priority?.name,
-        iconUrl: issue.fields.priority?.iconUrl
-      },
+      priority: issue.fields.priority?.name,
       labels: issue.fields.labels || [],
       components: issue.fields.components?.map((comp: any) => comp.name) || [],
       fixVersions: issue.fields.fixVersions?.map((version: any) => version.name) || [],
@@ -425,11 +416,10 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
       }
     };
     
-    // Enhanced response object
+    // The expansions applied are evident from which keys are present, and the
+    // issue type is already on the issue itself, so neither is repeated here.
     const enhancedResponse: any = {
       issue: baseIssue,
-      detectedIssueType: detectedType || issueType,
-      appliedExpansions: [],
       success: true
     };
     
@@ -437,19 +427,16 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
     if ((params.includeEpicDetails || smartExpansions.includes('epicDetails')) && issueType === 'Epic') {
       const epicData = await getEpicSpecificDetails(params.issueKey, config);
       enhancedResponse.epicData = epicData;
-      enhancedResponse.appliedExpansions.push('epicDetails');
     }
     
     if ((params.includeStoryDetails || smartExpansions.includes('storyDetails')) && issueType === 'Story') {
       const storyData = await getStorySpecificDetails(issue, config);
       enhancedResponse.storyData = storyData;
-      enhancedResponse.appliedExpansions.push('storyDetails');
     }
     
     if ((params.includeSubtaskDetails || smartExpansions.includes('subtaskDetails')) && issueType === 'Sub-task') {
       const subtaskData = await getSubtaskSpecificDetails(issue, config);
       enhancedResponse.subtaskData = subtaskData;
-      enhancedResponse.appliedExpansions.push('subtaskDetails');
     }
     
     // Apply hierarchy expansion
@@ -483,7 +470,6 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
       }
       
       enhancedResponse.hierarchy = hierarchy;
-      enhancedResponse.appliedExpansions.push('hierarchy');
     }
     
     // Apply progress expansion
@@ -508,7 +494,6 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
       }
       
       enhancedResponse.progress = progress;
-      enhancedResponse.appliedExpansions.push('progress');
     }
     
     // Apply transitions
@@ -518,16 +503,12 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
         name: trans.name,
         to: trans.to.name
       })) || [];
-      enhancedResponse.appliedExpansions.push('transitions');
     }
     
     // Get additional context
     const additionalData = await getAdditionalContext(params.issueKey, params, config);
     if (Object.keys(additionalData).length > 0) {
       enhancedResponse.additionalContext = additionalData;
-      if (additionalData.recentComments) enhancedResponse.appliedExpansions.push('comments');
-      if (additionalData.changeHistory) enhancedResponse.appliedExpansions.push('history');
-      if (additionalData.attachments) enhancedResponse.appliedExpansions.push('attachments');
     }
 
     return enhancedResponse;

@@ -12,6 +12,8 @@
  * file in sync across those repos when the contract changes.
  */
 
+import { stripNoise } from './strip-noise.js';
+
 /** Stable, machine-readable error codes shared by all three MCP servers. */
 export const ErrorCodes = {
   // Auth & permissions
@@ -52,10 +54,20 @@ function serialize(payload: unknown): McpToolResult['content'] {
   return [{ type: 'text', text: JSON.stringify(payload, null, 2) }];
 }
 
-/** Build a success envelope. */
+/**
+ * Build a success envelope.
+ *
+ * Data passes through `stripNoise` so UI-only fields (self-links, icon and
+ * avatar URLs) and personal email addresses never reach the caller. See
+ * strip-noise.ts for what is removed and why.
+ */
 export function ok(data: unknown, meta: EnvelopeMeta = {}): McpToolResult {
   return {
-    content: serialize({ ok: true, data, meta }),
+    content: serialize({
+      ok: true,
+      data: stripNoise(data, typeof meta.tool === 'string' ? meta.tool : undefined),
+      meta,
+    }),
     isError: false,
   };
 }
