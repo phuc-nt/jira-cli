@@ -434,7 +434,10 @@ export async function enhancedGetIssueImpl(params: EnhancedGetIssueParams, conte
       enhancedResponse.storyData = storyData;
     }
     
-    if ((params.includeSubtaskDetails || smartExpansions.includes('subtaskDetails')) && issueType === 'Sub-task') {
+    // Jira flags sub-task types on the issue itself; matching the type name
+    // instead skips every project that spells it "Subtask" or localises it.
+    const isSubtaskType = issue.fields.issuetype?.subtask === true;
+    if ((params.includeSubtaskDetails || smartExpansions.includes('subtaskDetails')) && isSubtaskType) {
       const subtaskData = await getSubtaskSpecificDetails(issue, config);
       enhancedResponse.subtaskData = subtaskData;
     }
