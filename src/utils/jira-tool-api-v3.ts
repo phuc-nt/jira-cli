@@ -29,6 +29,30 @@ export async function fetchJiraCreateMeta(
   }
 }
 
+/**
+ * Resolve the name a project actually uses for its sub-task issue type.
+ *
+ * Projects spell it differently ("Subtask", "Sub-task", or a localised name),
+ * and createmeta matches on the exact string, so a hardcoded guess makes both
+ * the type and the parent field fall out of the request.
+ */
+export async function resolveSubtaskTypeName(
+  config: AtlassianConfig,
+  projectKey: string
+): Promise<string | undefined> {
+  const headers = createBasicHeaders(config.email, config.apiToken);
+  const baseUrl = normalizeAtlassianBaseUrl(config.baseUrl);
+  const url = `${baseUrl}/rest/api/3/project/${encodeURIComponent(projectKey)}?expand=issueTypes`;
+  const response = await fetch(url, { headers, credentials: 'omit' });
+  if (!response.ok) {
+    logger.warn(`[resolveSubtaskTypeName] Cannot read issue types for ${projectKey}: ${response.status}`);
+    return undefined;
+  }
+  const project = await response.json();
+  const match = (project.issueTypes || []).find((t: any) => t.subtask === true);
+  return match?.name;
+}
+
 // Create a new Jira issue (fix: chỉ gửi các trường có trong createmeta)
 export async function createIssue(
   config: AtlassianConfig,

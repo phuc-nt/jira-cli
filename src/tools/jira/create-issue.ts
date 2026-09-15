@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ToolRegistrar } from '../../utils/tool-registrar.js';
 import { AtlassianConfig } from '../../utils/atlassian-api-base.js';
-import { createIssue } from '../../utils/jira-tool-api-v3.js';
+import { createIssue, resolveSubtaskTypeName } from '../../utils/jira-tool-api-v3.js';
 import { ApiError } from '../../utils/error-handler.js';
 import { Logger } from '../../utils/logger.js';
 import { Tools, Config } from '../../utils/mcp-helpers.js';
@@ -28,7 +28,7 @@ export const createIssueSchema = z.object({
   storyPoints: z.number().optional().describe('Story points estimation'),
   
   // Sub-task specific fields (auto-detects Sub-task type)
-  parentKey: z.string().optional().describe('Parent issue key (automatically sets issueType to Sub-task)'),
+  parentKey: z.string().optional().describe("Parent issue key. Selects the project's sub-task type automatically, whatever that project calls it."),
   
   // Additional fields
   components: z.array(z.string()).optional().describe('Component names'),
@@ -38,6 +38,9 @@ export const createIssueSchema = z.object({
 });;
 
 type CreateIssueParams = z.infer<typeof createIssueSchema>;
+
+/** Stands in for the sub-task type until the project's own name is resolved. */
+const SUBTASK_TYPE_PLACEHOLDER = 'Sub-task';
 
 /**
  * Intelligent issue type detection based on provided parameters
@@ -55,10 +58,12 @@ function detectIssueType(params: CreateIssueParams): string {
   }
   
   if (params.parentKey) {
-    logger.info('Auto-detected issue type: Sub-task (parentKey provided)');
-    return 'Sub-task';
+    // The caller-visible placeholder; createIssueToolImpl swaps in the name the
+    // project actually uses, since projects spell this type differently.
+    logger.info('Auto-detected issue type: sub-task (parentKey provided)');
+    return SUBTASK_TYPE_PLACEHOLDER;
   }
-  
+
   if (params.epicKey || params.storyPoints) {
     logger.info('Auto-detected issue type: Story (epicKey or storyPoints provided)');
     return 'Story';
@@ -126,13 +131,16 @@ function buildAdditionalFields(params: CreateIssueParams, detectedType: string):
       }
       break;
       
-    case 'Sub-task':
-      if (params.parentKey) {
-        additionalFields.parent = { key: params.parentKey };
-      }
-      break;
   }
-  
+
+  // The parent link belongs to the request whenever a parent was named, not
+  // only when the type string happens to match this switch. Projects spell the
+  // sub-task type differently ("Subtask", "Sub-task", localised names), so
+  // keying the parent field off the spelling drops it for every other variant.
+  if (params.parentKey) {
+    additionalFields.parent = { key: params.parentKey };
+  }
+
   return additionalFields;
 }
 
@@ -140,9 +148,19 @@ export async function createIssueToolImpl(params: CreateIssueParams, context: an
   const config: AtlassianConfig = Config.getConfigFromContextOrEnv(context);
   
   // Intelligent type detection
-  const detectedType = detectIssueType(params);
+  let detectedType = detectIssueType(params);
+
+  // A parent means a sub-task, but only the project knows what it calls that
+  // type. Asking it keeps this working on projects that spell it "Subtask".
+  if (params.parentKey && !params.issueType) {
+    const projectSubtaskType = await resolveSubtaskTypeName(config, params.projectKey);
+    if (projectSubtaskType) {
+      detectedType = projectSubtaskType;
+    }
+  }
+
   logger.info(`Creating ${detectedType} in project: ${params.projectKey}`);
-  
+
   // Build additional fields based on type and parameters
   const additionalFields = buildAdditionalFields(params, detectedType);
   
