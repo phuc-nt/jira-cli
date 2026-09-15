@@ -39,6 +39,9 @@
     "cli",
     "agent",
     "skill",
+    "agent-skills",
+    "ai-agents",
+    "mcp-alternative",
     "claude-code",
     "kiro"
   ],
