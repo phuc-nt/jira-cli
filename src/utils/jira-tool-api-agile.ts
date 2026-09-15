@@ -335,3 +335,21 @@ export async function createSprint(
 
 // ... existing code ...
 // (To be filled with the full code of the above functions, keeping their implementation unchanged) 
+/**
+ * Delete a sprint.
+ *
+ * Jira refuses to delete an active sprint; it must be closed or still future.
+ * Issues in the sprint are not deleted — they return to the backlog.
+ */
+export async function deleteSprint(config: AtlassianConfig, sprintId: string): Promise<void> {
+  const headers = createBasicHeaders(config.email, config.apiToken);
+  const baseUrl = normalizeAtlassianBaseUrl(config.baseUrl);
+  const url = `${baseUrl}/rest/agile/1.0/sprint/${encodeURIComponent(sprintId)}`;
+  logger.debug(`Deleting Jira sprint ${sprintId}`);
+  const response = await fetch(url, { method: 'DELETE', headers, credentials: 'omit' });
+  if (!response.ok) {
+    const responseText = await response.text();
+    logger.error(`Jira API error (delete sprint, ${response.status}):`, responseText);
+    throw new Error(`Jira API error: ${response.status} ${responseText}`);
+  }
+}

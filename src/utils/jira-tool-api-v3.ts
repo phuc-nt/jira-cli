@@ -727,3 +727,51 @@ export async function getJiraAvailableGadgets(config: AtlassianConfig): Promise<
   }
   return await response.json();
 } 
+/**
+ * Delete a dashboard. Jira removes it for everyone it was shared with, so the
+ * caller is expected to have confirmed the intent before reaching here.
+ */
+export async function deleteDashboard(
+  config: AtlassianConfig,
+  dashboardId: string
+): Promise<void> {
+  const headers = createBasicHeaders(config.email, config.apiToken);
+  const baseUrl = normalizeAtlassianBaseUrl(config.baseUrl);
+  const url = `${baseUrl}/rest/api/3/dashboard/${encodeURIComponent(dashboardId)}`;
+  logger.debug(`Deleting Jira dashboard ${dashboardId}`);
+  const response = await fetch(url, { method: 'DELETE', headers, credentials: 'omit' });
+  if (!response.ok) {
+    const responseText = await response.text();
+    logger.error(`Jira API error (delete dashboard, ${response.status}):`, responseText);
+    throw new Error(`Jira API error: ${response.status} ${responseText}`);
+  }
+}
+
+/**
+ * Delete a fix version (release).
+ *
+ * Issues keep pointing at a version until it is replaced, so Jira takes the
+ * replacement targets in the query string: without them the version vanishes
+ * from every issue that carried it. `moveFixIssuesTo` covers the fixVersions
+ * field, `moveAffectedIssuesTo` the affectedVersion field.
+ */
+export async function deleteFixVersion(
+  config: AtlassianConfig,
+  versionId: string,
+  options: { moveFixIssuesTo?: string; moveAffectedIssuesTo?: string } = {}
+): Promise<void> {
+  const headers = createBasicHeaders(config.email, config.apiToken);
+  const baseUrl = normalizeAtlassianBaseUrl(config.baseUrl);
+  const query = new URLSearchParams();
+  if (options.moveFixIssuesTo) query.set('moveFixIssuesTo', options.moveFixIssuesTo);
+  if (options.moveAffectedIssuesTo) query.set('moveAffectedIssuesTo', options.moveAffectedIssuesTo);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const url = `${baseUrl}/rest/api/3/version/${encodeURIComponent(versionId)}${suffix}`;
+  logger.debug(`Deleting Jira version ${versionId}`);
+  const response = await fetch(url, { method: 'DELETE', headers, credentials: 'omit' });
+  if (!response.ok) {
+    const responseText = await response.text();
+    logger.error(`Jira API error (delete version, ${response.status}):`, responseText);
+    throw new Error(`Jira API error: ${response.status} ${responseText}`);
+  }
+}

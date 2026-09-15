@@ -5,10 +5,23 @@ description: Search, read, create, update, transition and comment on Jira Cloud 
 
 # Jira via `jira-cli`
 
-`jira-cli` is a shell command with 47 Jira Cloud tools, the same tools,
+`jira-cli` is a shell command with 49 Jira Cloud tools, the same tools,
 parameters and response shape as the Jira Cloud MCP server. Every call prints
 one JSON envelope on stdout; nothing else goes there. Logs go to stderr. Use it
 exactly as you would use the MCP tools of the same names.
+
+**Never guess a tool name or a parameter name.** Unlike an MCP server, this CLI
+does not push its tool list into your context — you have to ask for it, and the
+answer is authoritative:
+
+```bash
+jira-cli tools --json        # every tool: name, summary, required[], optional[]
+jira-cli describe <tool>     # one tool: full description + JSON Schema
+```
+
+Section 5 below maps tasks to tools. When that table is not enough, run
+`describe` before calling — it costs one command and prevents an INVALID_INPUT
+round trip.
 
 ## 1. Check the setup once per session
 
@@ -131,10 +144,59 @@ change (issue key, fields, new values) and get the user's confirmation. Read
 tools (`get*`, `list*`, `*Search*`) need no confirmation. Never bulk-write
 across issues the user did not name or filter explicitly.
 
-## 5. Tool index
+## 5. Picking the right tool
 
-Parameter tables for all 47 tools: [reference/tools.md](reference/tools.md).
+Parameter tables for all 49 tools: [reference/tools.md](reference/tools.md).
 When a table is not enough, `jira-cli describe <tool>` is authoritative.
+
+Start from the task, not from the tool name:
+
+| The user wants | Tool |
+|---|---|
+| Find issues by anything (project, status, assignee, JQL, text) | `enhancedSearchIssues` — the only search tool; there is no `listIssues` |
+| Everything about one issue | `getIssue` (add `--includeComments`, `--includeTransitions`, `--includeHierarchy`) |
+| Only the comments / only the transitions | `getIssueComments` / `getIssueTransitions` |
+| Create anything: task, bug, story, epic, sub-task | `createIssue` — one tool, the type is detected from the parameters |
+| Change fields on an issue | `updateIssue` |
+| Move an issue through the workflow | `getIssueTransitions`, then `transitionIssue` |
+| Find a person's accountId | `universalSearchUsers` (or `getUser` when the accountId is known) |
+| What is on a board / in the backlog | `getBoardIssues` |
+| What is in a sprint | `getSprintIssues` |
+| Finish a sprint normally | `closeSprint` — NOT `deleteSprint` |
+| Undo a sprint created by mistake | `deleteSprint` (future or closed only; active is refused) |
+| Retire a release | `updateFixVersion --released true` — NOT `deleteFixVersion` |
+
+Pairs that are easy to confuse:
+
+- `getSprintIssues` reports **0 issues on team-managed (next-gen) boards** even
+  when the sprint has issues — Jira's own agile endpoint behaves that way. To
+  see a next-gen sprint's contents, use
+  `enhancedSearchIssues --jql 'sprint = <id>'`.
+- `closeSprint` ends a sprint and keeps its history; `deleteSprint` erases it
+  from burndown and velocity. Default to `closeSprint`.
+- `removeGadgetFromDashboard` removes one gadget; `deleteDashboard` removes the
+  whole dashboard for everyone it was shared with.
+- `updateFixVersion` (released/archived) keeps release history;
+  `deleteFixVersion` removes the version and, without `moveFixIssuesTo`, strips
+  it from every issue that carried it.
+- `updateIssueComment` takes the comment's **current** version internally — do
+  not pre-increment it.
+
+## 5b. Destructive tools
+
+`deleteIssue`, `deleteSprint`, `deleteDashboard`, `deleteFixVersion` and
+`deleteFilter` are irreversible and none of them has an undo. Before calling
+any of them:
+
+1. Name the exact object (key, id **and** its name/summary) and what else it
+   takes with it — a dashboard's gadgets, a sprint's history, a version's links
+   on every issue that carries it.
+2. Get the user's explicit confirmation for that object.
+3. Prefer the non-destructive alternative in the table above when it fits.
+
+Never delete objects the user did not name, never delete in a loop over search
+results, and never delete to "clean up" something you created unless the user
+asked for that.
 
 ## 6. When MCP becomes available
 

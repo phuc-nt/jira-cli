@@ -5,6 +5,9 @@ import { registerAssignIssueTool } from './jira/assign-issue.js';
 import { registerCreateFilterTool } from './jira/create-filter.js';
 import { registerUpdateFilterTool } from './jira/update-filter.js';
 import { registerDeleteFilterTool } from './jira/delete-filter.js';
+import { registerDeleteDashboardTool } from './jira/delete-dashboard.js';
+import { registerDeleteSprintTool } from './jira/delete-sprint.js';
+import { registerDeleteFixVersionTool } from './jira/delete-fix-version.js';
 import { registerCreateSprintTool } from './jira/create-sprint.js';
 import type { ToolRegistrar } from '../utils/tool-registrar.js';
 import { AtlassianConfig } from '../utils/atlassian-api-base.js';
@@ -18,7 +21,7 @@ import { registerAddGadgetToDashboardTool } from './jira/add-gadget-to-dashboard
 import { registerRemoveGadgetFromDashboardTool } from './jira/remove-gadget-from-dashboard.js';
 import { registerAddIssueToSprintTool } from './jira/add-issue-to-sprint.js';
 import { registerGetJiraGadgetsTool } from './jira/get-gadgets-new.js';
-import { registerListIssuesTool } from './jira/list-issues.js';
+// Removed: registerListIssuesTool (replaced by enhanced-search-issues)
 // Removed: registerGetIssueTool (replaced by enhanced-get-issue)
 import { registerEnhancedGetIssueTool } from './jira/enhanced-get-issue.js';
 // Removed: registerSearchIssuesTool (replaced by enhanced-search-issues)
@@ -64,7 +67,7 @@ export function registerAllTools(server: any) {
   // Register all Jira tools
   
   // Issue management tools (read operations)
-  registerListIssuesTool(server);
+  // registerListIssuesTool(server); // Replaced by enhancedSearchIssues
   // registerGetIssueTool(server); // Replaced by enhanced version
   registerEnhancedGetIssueTool(server); // Enhanced getIssue with context expansion
   // registerSearchIssuesTool(server); // Replaced by enhanced version
@@ -120,6 +123,7 @@ export function registerAllTools(server: any) {
   registerStartSprintTool(server);
   registerCloseSprintTool(server);
   registerAddIssueToSprintTool(server);
+  registerDeleteSprintTool(server);
   
   registerAddIssuesToBacklogTool(server);
   registerRankBacklogIssuesTool(server);
@@ -128,6 +132,7 @@ export function registerAllTools(server: any) {
   registerUpdateDashboardTool(server);
   registerAddGadgetToDashboardTool(server);
   registerRemoveGadgetFromDashboardTool(server);
+  registerDeleteDashboardTool(server);
   registerGetJiraGadgetsTool(server);
 
   // Fix Version Management Tools (Sprint 4.4)
@@ -135,5 +140,6 @@ export function registerAllTools(server: any) {
   registerListProjectVersionsTool(server);
   registerGetProjectVersionTool(server);
   registerUpdateFixVersionTool(server);
+  registerDeleteFixVersionTool(server);
 
 }
