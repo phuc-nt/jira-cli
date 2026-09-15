@@ -1,0 +1,55 @@
+{
+  "name": "@phuc-nt/jira-cli",
+  "version": "0.1.0",
+  "description": "Jira Cloud from the shell for AI agent harnesses that cannot load MCP servers: 47 tools, one JSON envelope, Atlassian API token, bundled agent skill",
+  "type": "module",
+  "bin": {
+    "jira-cli": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "typecheck": "tsc --noEmit",
+    "cli": "node dist/cli.js",
+    "skill:reference": "node scripts/generate-tool-reference.mjs",
+    "prepare": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phuc-nt/jira-cli.git"
+  },
+  "homepage": "https://github.com/phuc-nt/jira-cli#readme",
+  "bugs": {
+    "url": "https://github.com/phuc-nt/jira-cli/issues"
+  },
+  "keywords": [
+    "jira",
+    "atlassian",
+    "cli",
+    "agent",
+    "skill",
+    "claude-code",
+    "kiro"
+  ],
+  "author": "phuc-nt",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.13",
+    "dotenv": "^16.4.1",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.3.3",
+    "zod": "^3.22.4",
+    "zod-to-json-schema": "^3.24.5"
+  }
+}

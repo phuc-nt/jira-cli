@@ -1,0 +1,154 @@
+import { Logger } from "./logger.js";
+
+export interface AtlassianConfig {
+  baseUrl: string;
+  apiToken: string;
+  email: string;
+}
+
+// Initialize logger
+export const logger = Logger.getLogger("AtlassianAPI");
+
+/**
+ * Create basic headers for API request
+ * @param email User email
+ * @param apiToken User API token
+ * @returns Object containing basic headers
+ */
+export const createBasicHeaders = (email: string, apiToken: string) => {
+  // Remove whitespace and newlines from API token
+  const cleanedToken = apiToken.replace(/\s+/g, "");
+  // Always use Basic Authentication as per API docs
+  const auth = Buffer.from(`${email}:${cleanedToken}`).toString("base64");
+  // Log headers for debugging
+  logger.debug(
+    "Creating headers with User-Agent:",
+    "MCP-Atlassian-Server/1.0.0"
+  );
+  return {
+    Authorization: `Basic ${auth}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    // Add User-Agent to help Cloudfront identify the request
+    "User-Agent": "MCP-Atlassian-Server/1.0.0",
+  };
+};
+
+// Helper: Normalize baseUrl for Atlassian API
+export function normalizeAtlassianBaseUrl(baseUrl: string): string {
+  let normalizedUrl = baseUrl;
+  if (normalizedUrl.startsWith("http://")) {
+    normalizedUrl = normalizedUrl.replace("http://", "https://");
+  } else if (!normalizedUrl.startsWith("https://")) {
+    normalizedUrl = `https://${normalizedUrl}`;
+  }
+  if (!normalizedUrl.includes(".atlassian.net")) {
+    normalizedUrl = `${normalizedUrl}.atlassian.net`;
+  }
+  if (normalizedUrl.match(/\.atlassian\.net\.atlassian\.net/)) {
+    normalizedUrl = normalizedUrl.replace(
+      ".atlassian.net.atlassian.net",
+      ".atlassian.net"
+    );
+  }
+  return normalizedUrl;
+}
+
+// Helper: Convert Atlassian Document Format to simple Markdown
+export function adfToMarkdown(content: any): string {
+  if (!content || !content.content) return "";
+  let markdown = "";
+  const processNode = (node: any): string => {
+    if (!node) return "";
+    switch (node.type) {
+      case "paragraph":
+        return node.content
+          ? node.content.map(processNode).join("") + "\n\n"
+          : "\n\n";
+      case "text":
+        let text = node.text || "";
+        if (node.marks) {
+          node.marks.forEach((mark: any) => {
+            switch (mark.type) {
+              case "strong":
+                text = `**${text}**`;
+                break;
+              case "em":
+                text = `*${text}*`;
+                break;
+              case "code":
+                text = `\`${text}\``;
+                break;
+              case "link":
+                text = `[${text}](${mark.attrs.href})`;
+                break;
+            }
+          });
+        }
+        return text;
+      case "heading":
+        const level = node.attrs.level;
+        const headingContent = node.content
+          ? node.content.map(processNode).join("")
+          : "";
+        return "#".repeat(level) + " " + headingContent + "\n\n";
+      case "bulletList":
+        return node.content ? node.content.map(processNode).join("") : "";
+      case "listItem":
+        return (
+          "- " +
+          (node.content ? node.content.map(processNode).join("") : "") +
+          "\n"
+        );
+      case "orderedList":
+        return node.content
+          ? node.content
+              .map((item: any, index: number) => {
+                return `${index + 1}. ${processNode(item)}`;
+              })
+              .join("")
+          : "";
+      case "codeBlock":
+        const code = node.content ? node.content.map(processNode).join("") : "";
+        const language =
+          node.attrs && node.attrs.language ? node.attrs.language : "";
+        return "```" + language + "\n" + code + "\n```\n\n";
+      case "hardBreak":
+        return "\n";
+      case "rule":
+        return "---\n\n";
+      default:
+        return node.content ? node.content.map(processNode).join("") : "";
+    }
+  };
+  content.content.forEach((node: any) => {
+    markdown += processNode(node);
+  });
+  return markdown;
+}
+
+/**
+ * Render a Jira description field to Markdown for client consumption.
+ *
+ * Jira API v3 returns rich text as ADF objects, but some callers still receive
+ * plain strings (v2 fallbacks, or fields already rendered upstream). Handles
+ * both, and optionally truncates the result.
+ */
+export function renderDescription(
+  description: any,
+  maxLength?: number
+): string | null {
+  if (description === null || description === undefined) return null;
+
+  const text =
+    typeof description === "string"
+      ? description
+      : adfToMarkdown(description).trim();
+
+  if (!text) return null;
+
+  if (typeof maxLength === "number" && text.length > maxLength) {
+    return text.substring(0, maxLength) + "...";
+  }
+  return text;
+}

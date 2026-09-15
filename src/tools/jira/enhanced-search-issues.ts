@@ -1,0 +1,508 @@
+import { z } from 'zod';
+import type { ToolRegistrar } from '../../utils/tool-registrar.js';
+import { AtlassianConfig, createBasicHeaders, normalizeAtlassianBaseUrl, renderDescription } from '../../utils/atlassian-api-base.js';
+import { ApiError, ApiErrorType } from '../../utils/error-handler.js';
+import { Logger } from '../../utils/logger.js';
+import { Config } from '../../utils/mcp-helpers.js';
+import { stringOrStringArray, toArray } from '../../utils/comma-separated-list-param.js';
+
+// Initialize logger
+const logger = Logger.getLogger('JiraTools:enhancedSearchIssues');
+
+// Smart filter schema for enhanced search
+export const enhancedSearchIssuesSchema = z.object({
+  // Core search parameters
+  projectKey: z.string().optional().describe('Project key to search within (e.g., XDEMO2)'),
+  
+  // Issue type filtering - auto-detects based on parameters
+  issueType: z.string().optional().describe('Specific issue type (Epic, Story, Task, Bug, Sub-task)'),
+  
+  // Note: Epic search functionality moved to dedicated epicSearchAgile tool for better reliability
+  
+  storyPoints: z.number().optional().describe('Story points filter (auto-detects Story type)'),
+  storyPointsMin: z.number().optional().describe('Minimum story points range'),
+  storyPointsMax: z.number().optional().describe('Maximum story points range'),
+  
+  parentKey: z.string().optional().describe('Parent issue key to find Sub-tasks (auto-detects Sub-task type)'),
+  
+  // General filtering
+  status: z.string().optional().describe('Issue status filter'),
+  assignee: z.string().optional().describe('Assignee account ID or email'),
+  priority: z.string().optional().describe('Priority filter (High, Medium, Low)'),
+  summary: z.string().optional().describe('Text to search in summary'),
+  description: z.string().optional().describe('Text to search in description'),
+  labels: z.array(z.string()).optional().describe('Labels to filter by'),
+  components: z.array(z.string()).optional().describe('Components to filter by'),
+  
+  // Date filtering
+  createdAfter: z.string().optional().describe('Issues created after date (YYYY-MM-DD)'),
+  createdBefore: z.string().optional().describe('Issues created before date (YYYY-MM-DD)'),
+  updatedAfter: z.string().optional().describe('Issues updated after date (YYYY-MM-DD)'),
+  updatedBefore: z.string().optional().describe('Issues updated before date (YYYY-MM-DD)'),
+  
+  // Sprint filtering  
+  sprintId: z.string().optional().describe('Sprint ID to filter by'),
+  sprintState: z.string().optional().describe('Sprint state (active, future, closed)'),
+  
+  // Advanced options
+  jql: z.string().optional().describe('Custom JQL query (overrides smart filters)'),
+  quickFilter: z.enum(['my-issues', 'recent', 'unresolved', 'recently-updated']).optional().describe('Quick filter shortcuts'),
+  
+  // Pagination - Updated for new API
+  maxResults: z.number().default(50).describe('Maximum number of results (default: 50)'),
+  nextPageToken: z.string().optional().describe('Token for next page from previous response (replaces startAt)'),
+  startAt: z.number().default(0).describe('DEPRECATED: Use nextPageToken for new API pagination'),
+  
+  // Response configuration
+  fields: stringOrStringArray.optional().describe('Comma-separated list of fields to include. Accepts a comma-separated string or an array.'),
+  includeHierarchy: z.boolean().default(false).describe('Include Epic/Story/Sub-task hierarchy info'),
+  includeProgress: z.boolean().default(false).describe('Include progress tracking info')
+});
+
+type EnhancedSearchIssuesParams = z.infer<typeof enhancedSearchIssuesSchema>;
+
+/**
+ * Smart issue type detection based on parameters
+ */
+function detectSearchIssueType(params: EnhancedSearchIssuesParams): string | null {
+  // Explicit type takes precedence
+  if (params.issueType) {
+    return params.issueType;
+  }
+  
+  // Auto-detect from parameters (Epic search moved to epicSearchAgile tool)
+  if (params.storyPoints || params.storyPointsMin || params.storyPointsMax) {
+    return 'Story';
+  }
+  
+  if (params.parentKey) {
+    return 'Sub-task';
+  }
+  
+  return null; // No specific type detected
+}
+
+/**
+ * Build smart JQL query from parameters
+ */
+function buildSmartJQL(params: EnhancedSearchIssuesParams): string {
+  // Use custom JQL if provided
+  if (params.jql) {
+    return params.jql;
+  }
+  
+  const jqlParts: string[] = [];
+  
+  // Project filter
+  if (params.projectKey) {
+    jqlParts.push(`project = "${params.projectKey}"`);
+  }
+  
+  // Smart issue type detection
+  const detectedType = detectSearchIssueType(params);
+  if (detectedType) {
+    jqlParts.push(`issuetype = "${detectedType}"`);
+  }
+  
+  // Epic search functionality moved to dedicated epicSearchAgile tool
+  
+  // Story points filters
+  if (params.storyPoints) {
+    jqlParts.push(`"Story Points" = ${params.storyPoints}`);
+  }
+  
+  if (params.storyPointsMin && params.storyPointsMax) {
+    jqlParts.push(`"Story Points" >= ${params.storyPointsMin} AND "Story Points" <= ${params.storyPointsMax}`);
+  } else if (params.storyPointsMin) {
+    jqlParts.push(`"Story Points" >= ${params.storyPointsMin}`);
+  } else if (params.storyPointsMax) {
+    jqlParts.push(`"Story Points" <= ${params.storyPointsMax}`);
+  }
+  
+  // Sub-task parent filter
+  if (params.parentKey) {
+    jqlParts.push(`parent = "${params.parentKey}"`);
+  }
+  
+  // General filters
+  if (params.status) {
+    jqlParts.push(`status = "${params.status}"`);
+  }
+  
+  if (params.assignee) {
+    // Handle both email and account ID
+    if (params.assignee.includes('@')) {
+      jqlParts.push(`assignee = "${params.assignee}"`);
+    } else {
+      jqlParts.push(`assignee = "${params.assignee}"`);
+    }
+  }
+  
+  if (params.priority) {
+    jqlParts.push(`priority = "${params.priority}"`);
+  }
+  
+  if (params.summary) {
+    jqlParts.push(`summary ~ "${params.summary}"`);
+  }
+  
+  if (params.description) {
+    jqlParts.push(`description ~ "${params.description}"`);
+  }
+  
+  // Labels filter
+  if (params.labels && params.labels.length > 0) {
+    const labelFilters = params.labels.map(label => `labels = "${label}"`);
+    jqlParts.push(`(${labelFilters.join(' OR ')})`);
+  }
+  
+  // Components filter
+  if (params.components && params.components.length > 0) {
+    const componentFilters = params.components.map(comp => `component = "${comp}"`);
+    jqlParts.push(`(${componentFilters.join(' OR ')})`);
+  }
+  
+  // Date filters
+  if (params.createdAfter) {
+    jqlParts.push(`created >= "${params.createdAfter}"`);
+  }
+  
+  if (params.createdBefore) {
+    jqlParts.push(`created <= "${params.createdBefore}"`);
+  }
+  
+  if (params.updatedAfter) {
+    jqlParts.push(`updated >= "${params.updatedAfter}"`);
+  }
+  
+  if (params.updatedBefore) {
+    jqlParts.push(`updated <= "${params.updatedBefore}"`);
+  }
+  
+  // Sprint filters
+  if (params.sprintId) {
+    jqlParts.push(`sprint = ${params.sprintId}`);
+  }
+  
+  if (params.sprintState) {
+    if (params.sprintState === 'active') {
+      jqlParts.push(`sprint in openSprints()`);
+    } else if (params.sprintState === 'future') {
+      jqlParts.push(`sprint in futureSprints()`);
+    } else if (params.sprintState === 'closed') {
+      jqlParts.push(`sprint in closedSprints()`);
+    }
+  }
+  
+  // Quick filters
+  if (params.quickFilter) {
+    switch (params.quickFilter) {
+      case 'my-issues':
+        jqlParts.push('assignee = currentUser()');
+        break;
+      case 'recent':
+        jqlParts.push('created >= -7d');
+        break;
+      case 'unresolved':
+        jqlParts.push('resolution = Unresolved');
+        break;
+      case 'recently-updated':
+        jqlParts.push('updated >= -3d');
+        break;
+    }
+  }
+  
+  // Default JQL if no filters
+  if (jqlParts.length === 0) {
+    return 'ORDER BY created DESC';
+  } else {
+    return jqlParts.join(' AND ') + ' ORDER BY created DESC';
+  }
+}
+
+/**
+ * Enhanced issue formatting with hierarchy and progress info
+ */
+function formatEnhancedIssue(issue: any, includeHierarchy: boolean, includeProgress: boolean) {
+  const baseIssue = {
+    key: issue.key,
+    id: issue.id,
+    summary: issue.fields.summary,
+    // Jira API v3 returns descriptions as ADF objects, so render to Markdown
+    // before truncating — string methods on the raw object silently yield
+    // undefined and leak the whole ADF tree to the client.
+    description: renderDescription(issue.fields.description, 200),
+    status: {
+      name: issue.fields.status?.name,
+      category: issue.fields.status?.statusCategory?.name
+    },
+    assignee: issue.fields.assignee ? {
+      accountId: issue.fields.assignee.accountId,
+      displayName: issue.fields.assignee.displayName
+    } : null,
+    priority: issue.fields.priority?.name,
+    issueType: issue.fields.issuetype?.name,
+    project: {
+      key: issue.fields.project?.key,
+      name: issue.fields.project?.name
+    },
+    created: issue.fields.created,
+    updated: issue.fields.updated,
+    duedate: issue.fields.duedate || null,
+    labels: issue.fields.labels || [],
+    components: issue.fields.components?.map((comp: any) => comp.name) || []
+  };
+  
+  // Add hierarchy information
+  if (includeHierarchy) {
+    const hierarchy: any = {};
+    
+    // Epic information
+    if (issue.fields.customfield_10011) { // Epic Link
+      hierarchy.epicKey = issue.fields.customfield_10011;
+    }
+    
+    if (issue.fields.customfield_10014) { // Epic Name
+      hierarchy.epicName = issue.fields.customfield_10014;
+    }
+    
+    // Parent/Sub-task information
+    if (issue.fields.parent) {
+      hierarchy.parentKey = issue.fields.parent.key;
+      hierarchy.parentSummary = issue.fields.parent.fields?.summary;
+    }
+    
+    // Sub-tasks
+    if (issue.fields.subtasks && issue.fields.subtasks.length > 0) {
+      hierarchy.subtasks = issue.fields.subtasks.map((subtask: any) => ({
+        key: subtask.key,
+        summary: subtask.fields?.summary,
+        status: subtask.fields?.status?.name
+      }));
+    }
+    
+    if (Object.keys(hierarchy).length > 0) {
+      (baseIssue as any).hierarchy = hierarchy;
+    }
+  }
+  
+  // Add progress information
+  if (includeProgress) {
+    const progress: any = {};
+    
+    // Story points
+    if (issue.fields.customfield_10016) { // Story Points
+      progress.storyPoints = issue.fields.customfield_10016;
+    }
+    
+    // Sprint information
+    if (issue.fields.customfield_10020) { // Sprint
+      const sprints = Array.isArray(issue.fields.customfield_10020) 
+        ? issue.fields.customfield_10020 
+        : [issue.fields.customfield_10020];
+      progress.sprints = sprints.map((sprint: any) => ({
+        id: sprint.id,
+        name: sprint.name,
+        state: sprint.state
+      }));
+    }
+    
+    // Time tracking
+    if (issue.fields.timetracking) {
+      progress.timeTracking = {
+        originalEstimate: issue.fields.timetracking.originalEstimate,
+        remainingEstimate: issue.fields.timetracking.remainingEstimate,
+        timeSpent: issue.fields.timetracking.timeSpent
+      };
+    }
+    
+    if (Object.keys(progress).length > 0) {
+      (baseIssue as any).progress = progress;
+    }
+  }
+  
+  return baseIssue;
+}
+
+export async function enhancedSearchIssuesImpl(params: EnhancedSearchIssuesParams, context: any) {
+  const config: AtlassianConfig = Config.getConfigFromContextOrEnv(context);
+  
+  // Build smart JQL
+  const jqlQuery = buildSmartJQL(params);
+  const detectedType = detectSearchIssueType(params);
+  
+  logger.info(`Enhanced search - JQL: ${jqlQuery}`);
+  if (detectedType) {
+    logger.info(`Auto-detected issue type: ${detectedType}`);
+  }
+
+  try {
+    const headers = {
+      ...createBasicHeaders(config.email, config.apiToken),
+      'Content-Type': 'application/json'
+    };
+    const baseUrl = normalizeAtlassianBaseUrl(config.baseUrl);
+
+    // Enhanced field selection
+    const defaultFields = ['key', 'summary', 'status', 'assignee', 'priority', 'created', 'updated', 'duedate', 'issuetype', 'project', 'description', 'labels', 'components'];
+    const hierarchyFields = ['parent', 'subtasks', 'customfield_10011', 'customfield_10014']; // Epic Link, Epic Name
+    const progressFields = ['customfield_10016', 'customfield_10020', 'timetracking']; // Story Points, Sprint, Time Tracking
+    
+    let fields = toArray(params.fields) ?? defaultFields;
+    
+    if (params.includeHierarchy) {
+      fields = fields.concat(hierarchyFields);
+    }
+    
+    if (params.includeProgress) {
+      fields = fields.concat(progressFields);
+    }
+    
+    // Build request body for new POST API - include fields to get full data
+    const requestBody: any = {
+      jql: jqlQuery,
+      fields: fields,
+      maxResults: params.maxResults
+    };
+
+    // Use nextPageToken if provided (new API)
+    if (params.nextPageToken) {
+      requestBody.nextPageToken = params.nextPageToken;
+    }
+
+    logger.debug('Request body:', JSON.stringify(requestBody, null, 2));
+
+    const url = `${baseUrl}/rest/api/3/search/jql`;
+
+    const response = await fetch(url, { 
+      method: 'POST',
+      headers, 
+      credentials: 'omit',
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      logger.error(`Jira API error (enhanced search, ${response.status}):`, responseText);
+      throw new ApiError(ApiErrorType.SERVER_ERROR, `Jira API error: ${response.status} ${responseText}`, response.status);
+    }
+
+    const result = await response.json();
+    
+    // Log response for debugging
+    logger.debug('API Response structure:', JSON.stringify({ 
+      hasIssues: !!result.issues, 
+      issuesCount: result.issues?.length || 0,
+      hasTotal: result.hasOwnProperty('total'),
+      hasNextPageToken: !!result.nextPageToken,
+      keys: Object.keys(result)
+    }, null, 2));
+    
+    // With fields parameter, new API should return full issue data
+    logger.info(`API returned ${result.issues?.length || 0} issues with full data`);
+    
+    // Enhanced issue formatting for full issue data
+    const formattedIssues = result.issues?.map((issue: any) => 
+      formatEnhancedIssue(issue, params.includeHierarchy, params.includeProgress)
+    ) || [];
+
+    return {
+      issues: formattedIssues,
+      total: result.issues?.length || 0, // New API doesn't provide total count
+      maxResults: result.maxResults || params.maxResults,
+      nextPageToken: result.nextPageToken,
+      isLast: result.isLast,
+      jql: jqlQuery,
+      detectedIssueType: detectedType,
+      searchCriteria: {
+        smartFilters: params,
+        generatedJQL: jqlQuery
+      },
+      pagination: {
+        hasNext: !result.isLast,
+        nextPageToken: result.nextPageToken,
+        isLast: result.isLast
+      },
+      fetchMethod: 'enhanced JQL API with fields',
+      success: true
+    };
+
+  } catch (error) {
+    logger.error('Error in enhanced search:', error);
+    throw error;
+  }
+}
+
+export const registerEnhancedSearchIssuesTool = (server: ToolRegistrar) => {
+  server.tool(
+    'enhancedSearchIssues',
+    `Enhanced Jira Issue Search - Replaces: search-issues.ts + advanced capabilities
+    
+COMPREHENSIVE USAGE PATTERNS:
+
+1. BASIC JQL PATTERNS (from removed search-issues tool):
+   - Simple project search: { projectKey: "DEMO" }
+   - Status filtering: { projectKey: "DEMO", status: "In Progress" }
+   - Assignee search: { assignee: "john@company.com" }
+   - Priority filtering: { priority: "High" }
+   - Date range: { createdAfter: "2024-01-01", createdBefore: "2024-12-31" }
+   - Text search: { summary: "login bug", description: "authentication" }
+   - Combined filters: { projectKey: "DEMO", status: "Open", assignee: "me" }
+
+2. ENHANCED SMART DETECTION (new capabilities):
+   - Story points auto-detection: { storyPoints: 5 } → automatically adds issueType = Story
+   - Story points range: { storyPointsMin: 3, storyPointsMax: 8 } → smart Story filtering
+   - Sub-task discovery: { parentKey: "DEMO-123" } → finds all Sub-tasks
+   - Type-specific search: { issueType: "Bug", severity: "Critical" }
+
+3. PAGINATION & SORTING (covers all basic patterns):
+   - Basic pagination: { startAt: 0, maxResults: 50 }
+   - Custom sorting: { orderBy: "created DESC" }
+   - Field selection: { fields: ["summary", "status", "assignee"] }
+   - Large result handling with automatic chunking
+
+4. ADVANCED JQL BUILDING (enhanced beyond basic tool):
+   - Smart JQL construction from parameters
+   - Auto-detection of issue types based on provided fields
+   - Intelligent field expansion for optimal API calls
+   - Error handling with JQL syntax validation
+
+MIGRATION EXAMPLES:
+- search-issues({ jql: "project = DEMO AND status = Open" }) 
+  → enhancedSearchIssues({ projectKey: "DEMO", status: "Open" })
+- search-issues({ jql: "assignee = currentUser()" })
+  → enhancedSearchIssues({ assignee: "me" })
+- search-issues({ jql: "project = DEMO", expand: ["changelog"] })
+  → enhancedSearchIssues({ projectKey: "DEMO", expand: "changelog" })
+
+This tool provides ALL functionality from the basic search-issues tool plus intelligent enhancements for better AI client experience.`,
+    enhancedSearchIssuesSchema.shape,
+    async (params: EnhancedSearchIssuesParams, context: Record<string, any>) => {
+      try {
+        const result = await enhancedSearchIssuesImpl(params, context);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2)
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ 
+                success: false, 
+                error: error instanceof Error ? error.message : String(error),
+                searchCriteria: params
+              })
+            }
+          ],
+          isError: true
+        };
+      }
+    }
+  );
+};
