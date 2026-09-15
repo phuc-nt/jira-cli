@@ -42,20 +42,22 @@ async function listIssuesImpl(params: ListIssuesParams, context: any) {
     }
 
     const jql = jqlParts.length > 0 ? jqlParts.join(' AND ') : '';
-    
-    // Build search URL
-    const searchParams = new URLSearchParams({
-      jql: jql,
-      maxResults: params.limit.toString(),
-      fields: 'key,summary,status,assignee,priority,created,updated,issuetype,project'
-    });
 
-    const url = `${baseUrl}/rest/api/3/search?${searchParams}`;
+    // /rest/api/3/search was removed by Atlassian (CHANGE-2046); the
+    // replacement takes the query in a POST body and pages by token.
+    const requestBody = {
+      jql,
+      fields: ['key', 'summary', 'status', 'assignee', 'priority', 'created', 'updated', 'issuetype', 'project'],
+      maxResults: params.limit
+    };
 
-    const response = await fetch(url, { 
-      method: 'GET',
-      headers, 
-      credentials: 'omit' 
+    const url = `${baseUrl}/rest/api/3/search/jql`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      credentials: 'omit',
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -65,9 +67,9 @@ async function listIssuesImpl(params: ListIssuesParams, context: any) {
     }
 
     const result = await response.json();
-    
+
     // Format response for better readability
-    const formattedIssues = result.issues.map((issue: any) => ({
+    const formattedIssues = (result.issues || []).map((issue: any) => ({
       key: issue.key,
       summary: issue.fields.summary,
       status: issue.fields.status?.name,
@@ -81,9 +83,10 @@ async function listIssuesImpl(params: ListIssuesParams, context: any) {
 
     return {
       issues: formattedIssues,
-      total: result.total,
-      maxResults: result.maxResults,
-      startAt: result.startAt,
+      total: formattedIssues.length,
+      maxResults: result.maxResults ?? params.limit,
+      nextPageToken: result.nextPageToken,
+      isLast: result.isLast,
       jql: jql || 'all issues',
       success: true
     };
@@ -99,31 +102,19 @@ export const registerListIssuesTool = (server: ToolRegistrar) => {
     'listIssues',
     'List Jira issues with optional filtering by project, assignee, and status',
     listIssuesSchema.shape,
+    // Returning the bare result and letting errors propagate puts this tool on
+    // the same envelope path as every other one, so it gets the shared error
+    // codes and the response filtering instead of a hand-rolled wrapper.
     async (params: ListIssuesParams, context: Record<string, any>) => {
-      try {
-        const result = await listIssuesImpl(params, context);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2)
-            }
-          ]
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ 
-                success: false, 
-                error: error instanceof Error ? error.message : String(error) 
-              })
-            }
-          ],
-          isError: true
-        };
-      }
+      const result = await listIssuesImpl(params, context);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
     }
   );
 };
