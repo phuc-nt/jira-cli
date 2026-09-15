@@ -9,10 +9,11 @@ The tool names, parameters and response envelope are the same as the [Jira Cloud
 Node.js 20 or newer.
 
 ```bash
-npm install -g @phuc-nt/jira-cli
-# or straight from GitHub
 npm install -g github:phuc-nt/jira-cli
 ```
+
+Not published to the npm registry; install from GitHub. The package builds
+itself on install, so no extra build step is needed.
 
 ## Credentials
 
@@ -72,15 +73,33 @@ Error codes: `AUTH_FAILED`, `PERMISSION_DENIED`, `INVALID_INPUT`, `NOT_FOUND`, `
 
 Exact names and parameter tables: [skills/jira-cli/reference/tools.md](skills/jira-cli/reference/tools.md). `jira-cli describe <tool>` is the authority.
 
+### Destructive tools
+
+`deleteIssue`, `deleteSprint`, `deleteDashboard`, `deleteFixVersion` and
+`deleteFilter` are irreversible, and Jira offers no undo for any of them.
+
+`deleteSprint` refuses an active sprint with `CONFLICT` and needs `--force` to
+go through. That guard is this CLI's own: Jira Cloud deletes the sprint a team
+is currently working in without any objection, taking its burndown and velocity
+history with it. Prefer `closeSprint` to finish a sprint, and
+`updateFixVersion --released true` to retire a release.
+
+`deleteFixVersion` strips the version from every issue that carried it unless
+`--moveFixIssuesTo` names a replacement.
+
 ## Agent skill
 
 [`skills/jira-cli/`](skills/jira-cli/) follows the Agent Skills format (`SKILL.md` plus a generated reference). Copy it into the project the agent works in:
 
 ```bash
-SRC="$(npm root -g)/@phuc-nt/jira-cli/skills/jira-cli"
+SRC="$(dirname "$(dirname "$(readlink -f "$(command -v jira-cli)")")")/skills/jira-cli"
 cp -r "$SRC" .claude/skills/      # Claude Code
 cp -r "$SRC" .kiro/skills/        # Kiro
 ```
+
+That resolves the installed package from the `jira-cli` command itself, so it
+works however the package was installed. From a clone, copy `skills/jira-cli/`
+directly.
 
 The skill tells the agent to run `doctor` once, how to pass parameters, how to react to each error code, how to look up transition IDs before moving an issue, and to confirm with the user before writes.
 

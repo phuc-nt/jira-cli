@@ -35,8 +35,8 @@ jira-cli doctor
   `ATLASSIAN_SITE_NAME`, `ATLASSIAN_USER_EMAIL`, `ATLASSIAN_API_TOKEN` in the
   environment or in a `.env` file in the working directory. Never ask the user
   to paste the token into the chat, and never print it.
-- `command not found` → install: `npm install -g @phuc-nt/jira-cli`
-  (or `npm install -g github:phuc-nt/jira-cli`), Node 20+.
+- `command not found` → install: `npm install -g github:phuc-nt/jira-cli`,
+  Node 20+. Not on the npm registry.
 
 ## 2. Call a tool
 
@@ -148,6 +148,15 @@ across issues the user did not name or filter explicitly.
 
 Parameter tables for all 49 tools: [reference/tools.md](reference/tools.md).
 When a table is not enough, `jira-cli describe <tool>` is authoritative.
+
+**Never guess a tool name or a parameter name.** Unlike an MCP server, this CLI
+does not push its tool list into your context — ask it, and the answer is
+authoritative:
+
+```bash
+jira-cli tools --json      # every tool: name, summary, required[], optional[]
+jira-cli describe <tool>   # one tool: full description + JSON Schema
+```
 
 Start from the task, not from the tool name:
 
